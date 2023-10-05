@@ -1,68 +1,115 @@
 package main
 
-import "fmt"
-import "sync"
-import "net/http"
+import (
+	"encoding/json"
+	"net/http"
+	"sync"
+	"time"
 
-func init() {
-	// Initialize the Redis client.
-	redisClient = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
-}
+	"github.com/ani1238/url_shortener/redisdb"
+	"github.com/gorilla/mux"
+)
+
+var (
+	mutex      sync.Mutex
+	counter    int64 = 0
+	base64Char       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+)
 
 type URLShortener struct {
-	mutex    sync.Mutex
-	mappings map[string]string
-	baseURL  string
+	baseURL string
 }
 
 func NewURLShortener() *URLShortener {
 	return &URLShortener{
-		mappings: make(map[string]string),
-		baseURL:  "http://localhost:8080/",
+		baseURL: "http://localhost:8080/",
 	}
 }
 
-func (us *URLShortener) ShortenURL(w http.ResponseWriter, r *http.Request) {
+func responseJSON(w http.ResponseWriter, r *http.Request, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func (us *URLShortener) shortenURL(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
 	}
 
-	r.ParseForm()
-	longURL := r.FormValue("url")
+	var input struct {
+		URL string `json:"url"`
+	}
 
-	shortURL := generateShortURL()
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
 
-	// Store the mapping in Redis.
-	err := redisClient.Set(context.Background(), shortURL, longURL, 24*time.Hour).Err()
-	if err != nil {
+	if input.URL == "" {
+		http.Error(w, "No URL received", http.StatusBadRequest)
+		return
+	}
+
+	// Generate a unique ID for the short URL.
+	id, cnt := generateShortURLID()
+
+	// Store the long URL in Redis.
+	if err := redisdb.AddToRedis("counter", cnt, 365*24*time.Hour); err != nil {
+		http.Error(w, "Failed to store counter in Redis", http.StatusInternalServerError)
+		return
+	}
+
+	if err := redisdb.AddToRedis(id, input.URL, 24*time.Hour); err != nil {
 		http.Error(w, "Failed to store URL in Redis", http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Fprintf(w, "Shortened URL: %s%s\n", us.baseURL, shortURL)
+	responseJSON(w, r, map[string]string{
+		"shortened_url": us.baseURL + id,
+		"error":         "",
+	})
 }
 
-func (us *URLShortener) Redirect(w http.ResponseWriter, r *http.Request) {
-	shortURL := r.URL.Path[1:]
+func (us *URLShortener) redirectLongURL(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
 
 	// Retrieve the long URL from Redis.
-	longURL, err := redisClient.Get(context.Background(), shortURL).Result()
-	if err == redis.Nil {
-		http.NotFound(w, r)
-		return
-	} else if err != nil {
-		http.Error(w, "Failed to fetch URL from Redis", http.StatusInternalServerError)
+	longURL, err := redisdb.GetFromRedis(id)
+	if err != nil {
+		http.Error(w, "Not a valid ID", http.StatusNotFound)
 		return
 	}
 
 	http.Redirect(w, r, longURL, http.StatusFound)
 }
 
-func generateShortURL() string {
-	return "abc123"
+// Generate a unique short URL ID.
+func generateShortURLID() (string, int64) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	counter++
+
+	id := convertToBase64(counter)
+	return id, counter
+}
+
+func convertToBase64(num int64) string {
+	var encoded []byte
+	for num > 0 {
+		remainder := num % 64
+		encoded = append(encoded, base64Char[remainder])
+		num = num / 64
+	}
+	// Reverse the encoded characters to get the correct base64 representation.
+	length := len(encoded)
+	for i := 0; i < length/2; i++ {
+		encoded[i], encoded[length-i-1] = encoded[length-i-1], encoded[i]
+	}
+	return string(encoded)
 }
