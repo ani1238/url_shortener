@@ -54,17 +54,32 @@ func (us *URLShortener) shortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	id, err := redisdb.GetShortURLID(input.URL)
+	if err == nil {
+		// The URL is already in Redis, so return the existing shortened URL.
+		responseJSON(w, r, map[string]string{
+			"shortened_url": us.baseURL + id,
+			"error":         "",
+		})
+		return
+	}
+
 	// Generate a unique ID for the short URL.
 	id, cnt := generateShortURLID()
 
-	// Store the long URL in Redis.
 	if err := redisdb.AddToRedis("counter", cnt, 365*24*time.Hour); err != nil {
 		http.Error(w, "Failed to store counter in Redis", http.StatusInternalServerError)
 		return
 	}
+	//store the long url to short url mapping
+	if err := redisdb.AddToRedis("long:"+input.URL, id, 24*time.Hour); err != nil {
+		http.Error(w, "Failed to store long URL to short URL in Redis", http.StatusInternalServerError)
+		return
+	}
 
+	//store the short url to long url mapping
 	if err := redisdb.AddToRedis(id, input.URL, 24*time.Hour); err != nil {
-		http.Error(w, "Failed to store URL in Redis", http.StatusInternalServerError)
+		http.Error(w, "Failed to store short URL to long URL in Redis", http.StatusInternalServerError)
 		return
 	}
 

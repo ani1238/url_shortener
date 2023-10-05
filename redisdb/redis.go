@@ -36,3 +36,7 @@ func AddToRedis(id string, data interface{}, ttl time.Duration) error {
 func GetFromRedis(id string) (string, error) {
 	return redisClient.Get(ctx, id).Result()
 }
+
+func GetShortURLID(longURL string) (string, error) {
+	return redisClient.Get(ctx, "long:"+longURL).Result()
+}
