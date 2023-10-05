@@ -54,7 +54,7 @@ func (us *URLShortener) shortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := redisdb.GetShortURLID(input.URL)
+	id, err := redisdb.GetFromRedis("long:" + input.URL)
 	if err == nil {
 		// The URL is already in Redis, so return the existing shortened URL.
 		responseJSON(w, r, map[string]string{
