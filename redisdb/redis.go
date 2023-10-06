@@ -39,7 +39,7 @@ func GetFromRedis(id string) (string, error) {
 	return redisClient.Get(ctx, id).Result()
 }
 
-// IncrementDomainCount increments the count for a domain in Redis.
+// IncrementDomainCount increments the count for a domain in a Redis sorted set.
 func IncrementDomainCount(domain string) error {
-	return redisClient.HIncrBy(ctx, domainCountKey, domain, 1).Err()
+	return redisClient.ZIncrBy(ctx, "domain_counts", 1, domain).Err()
 }
