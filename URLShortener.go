@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,20 +75,16 @@ func (us *URLShortener) shortenURL(w http.ResponseWriter, r *http.Request) {
 
 	domain := extractDomain(input.URL)
 
-	//check if domain not already present then add domain to redis
-	domain_cnt, err := redisdb.GetFromRedis(domain)
-	if err != nil {
-		if err := redisdb.AddToRedis(domain, 1, 365*24*time.Hour); err != nil {
-			http.Error(w, "Failed to store domain counter in Redis", http.StatusInternalServerError)
-			return
-		}
-	} else {
-		converted_domain_cnt, _ := strconv.Atoi(domain_cnt)
-		if err := redisdb.AddToRedis(domain, converted_domain_cnt+1, 365*24*time.Hour); err != nil {
-			http.Error(w, "Failed to store domain counter in Redis", http.StatusInternalServerError)
-			return
-		}
+	// Lock to update the domain count in Redis
+	mutex.Lock()
+
+	// Update the domain count in Redis
+	if err := redisdb.IncrementDomainCount(domain); err != nil {
+		http.Error(w, "Failed to increment domain count in Redis", http.StatusInternalServerError)
+		return
 	}
+
+	mutex.Unlock()
 
 	id, err := redisdb.GetFromRedis("long:" + input.URL)
 	if err == nil {

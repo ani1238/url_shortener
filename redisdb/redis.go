@@ -12,6 +12,8 @@ var (
 	ctx         = context.Background()
 )
 
+const domainCountKey = "domain_counts"
+
 // InitializeRedisClient initializes the Redis client.
 func InitializeRedisClient() {
 	redisClient = redis.NewClient(&redis.Options{
@@ -35,4 +37,9 @@ func AddToRedis(id string, data interface{}, ttl time.Duration) error {
 // GetLongURL retrieves the long URL from Redis.
 func GetFromRedis(id string) (string, error) {
 	return redisClient.Get(ctx, id).Result()
+}
+
+// IncrementDomainCount increments the count for a domain in Redis.
+func IncrementDomainCount(domain string) error {
+	return redisClient.HIncrBy(ctx, domainCountKey, domain, 1).Err()
 }
