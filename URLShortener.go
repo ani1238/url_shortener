@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +36,24 @@ func responseJSON(w http.ResponseWriter, r *http.Request, data interface{}) {
 	}
 }
 
+// Function to extract the domain name from a URL without the top-level domain
+func extractDomain(url string) string {
+	parts := strings.Split(url, "/")
+	if len(parts) >= 2 && strings.HasPrefix(parts[2], "www.") {
+		domainParts := strings.Split(parts[2][4:], ".")
+		if len(domainParts) >= 2 {
+			return domainParts[len(domainParts)-2]
+		}
+	}
+	if len(parts) >= 2 {
+		domainParts := strings.Split(parts[2], ".")
+		if len(domainParts) >= 2 {
+			return domainParts[len(domainParts)-2]
+		}
+	}
+	return ""
+}
+
 func (us *URLShortener) shortenURL(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
@@ -54,6 +74,23 @@ func (us *URLShortener) shortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	domain := extractDomain(input.URL)
+
+	//check if domain not already present then add domain to redis
+	domain_cnt, err := redisdb.GetFromRedis(domain)
+	if err != nil {
+		if err := redisdb.AddToRedis(domain, 1, 365*24*time.Hour); err != nil {
+			http.Error(w, "Failed to store domain counter in Redis", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		converted_domain_cnt, _ := strconv.Atoi(domain_cnt)
+		if err := redisdb.AddToRedis(domain, converted_domain_cnt+1, 365*24*time.Hour); err != nil {
+			http.Error(w, "Failed to store domain counter in Redis", http.StatusInternalServerError)
+			return
+		}
+	}
+
 	id, err := redisdb.GetFromRedis("long:" + input.URL)
 	if err == nil {
 		// The URL is already in Redis, so return the existing shortened URL.
@@ -65,12 +102,8 @@ func (us *URLShortener) shortenURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate a unique ID for the short URL.
-	id, cnt := generateShortURLID()
+	id, _ = generateShortURLID()
 
-	if err := redisdb.AddToRedis("counter", cnt, 365*24*time.Hour); err != nil {
-		http.Error(w, "Failed to store counter in Redis", http.StatusInternalServerError)
-		return
-	}
 	//store the long url to short url mapping
 	if err := redisdb.AddToRedis("long:"+input.URL, id, 24*time.Hour); err != nil {
 		http.Error(w, "Failed to store long URL to short URL in Redis", http.StatusInternalServerError)
