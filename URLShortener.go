@@ -131,6 +131,42 @@ func (us *URLShortener) redirectLongURL(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, longURL, http.StatusFound)
 }
 
+func (us *URLShortener) getTopDomains(w http.ResponseWriter, r *http.Request) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	// Retrieve the top domains from Redis
+	topDomains, err := redisdb.GetTopDomains(3)
+	if err != nil {
+		http.Error(w, "Failed to retrieve top domains from Redis", http.StatusInternalServerError)
+		return
+	}
+
+	// Prepare the response JSON
+	var response []struct {
+		Domain string `json:"domain"`
+		Count  int64  `json:"count"`
+	}
+
+	for _, domain := range topDomains {
+		count, err := redisdb.GetDomainCount(domain)
+		if err != nil {
+			http.Error(w, "Failed to retrieve domain count from Redis", http.StatusInternalServerError)
+			return
+		}
+		response = append(response, struct {
+			Domain string `json:"domain"`
+			Count  int64  `json:"count"`
+		}{Domain: domain, Count: int64(count)})
+	}
+
+	// Send the JSON response
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
 // Generate a unique short URL ID.
 func generateShortURLID() (string, int64) {
 	mutex.Lock()

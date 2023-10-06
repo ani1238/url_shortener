@@ -43,3 +43,17 @@ func GetFromRedis(id string) (string, error) {
 func IncrementDomainCount(domain string) error {
 	return redisClient.ZIncrBy(ctx, "domain_counts", 1, domain).Err()
 }
+
+// GetTopDomains retrieves the top N domains with the highest counts from the Redis sorted set.
+func GetTopDomains(N int) ([]string, error) {
+	topDomains, err := redisClient.ZRevRange(ctx, "domain_counts", 0, int64(N-1)).Result()
+	if err != nil {
+		return nil, err
+	}
+	return topDomains, nil
+}
+
+// GetDomainCount retrieves the count for a domain from the Redis sorted set.
+func GetDomainCount(domain string) (float64, error) {
+	return redisClient.ZScore(ctx, "domain_counts", domain).Result()
+}

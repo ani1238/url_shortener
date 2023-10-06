@@ -12,7 +12,8 @@ func main() {
 	r := mux.NewRouter()
 	us := NewURLShortener()
 
-	r.HandleFunc("/shorten", us.shortenURL).Methods(http.MethodPost)
+	r.HandleFunc("/shortenurl", us.shortenURL).Methods(http.MethodPost)
+	r.HandleFunc("/topdomains", us.getTopDomains)
 	r.HandleFunc("/{id:[a-zA-Z0-9]+}", us.redirectLongURL)
 
 	// Initialize the Redis client.
