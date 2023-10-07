@@ -2,22 +2,30 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/ani1238/url_shortener/redisdb"
 	"github.com/gorilla/mux"
 )
 
+func init() {
+	// Initialize the Redis client
+	redisdb.InitializeRedisClient()
+
+	// Set the initial value for the shortened URL count
+	if err := redisdb.SetInitialShortenedURLCount(); err != nil {
+		log.Fatalf("Failed to set initial shortened URL count in Redis: %v", err)
+	}
+}
+
 func main() {
 	r := mux.NewRouter()
 	us := NewURLShortener()
 
 	r.HandleFunc("/shortenurl", us.shortenURL).Methods(http.MethodPost)
-	r.HandleFunc("/topdomains", us.getTopDomains)
+	r.HandleFunc("/metrics/topdomains", us.getTopDomains)
 	r.HandleFunc("/{id:[a-zA-Z0-9]+}", us.redirectLongURL)
-
-	// Initialize the Redis client.
-	redisdb.InitializeRedisClient()
 
 	http.Handle("/", r)
 

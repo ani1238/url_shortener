@@ -29,6 +29,18 @@ func InitializeRedisClient() {
 	}
 }
 
+// SetInitialShortenedURLCount sets the initial value for the shortened URL count in Redis.
+func SetInitialShortenedURLCount() error {
+	// Check if the count key already exists in Redis
+	if exists, err := redisClient.Exists(ctx, "shortened_url_count").Result(); err != nil {
+		return err
+	} else if exists == 0 {
+		// Set the initial count if it doesn't exist
+		return redisClient.Set(ctx, "shortened_url_count", 1, 0).Err()
+	}
+	return nil
+}
+
 // ShortenURL stores the shortened URL in Redis.
 func AddToRedis(id string, data interface{}, ttl time.Duration) error {
 	return redisClient.Set(ctx, id, data, ttl).Err()
@@ -56,4 +68,14 @@ func GetTopDomains(N int) ([]string, error) {
 // GetDomainCount retrieves the count for a domain from the Redis sorted set.
 func GetDomainCount(domain string) (float64, error) {
 	return redisClient.ZScore(ctx, "domain_counts", domain).Result()
+}
+
+// IncrementShortenedURLCount increments the counter for shortened URLs in Redis.
+func IncrementShortenedURLCount() error {
+	return redisClient.Incr(ctx, "shortened_url_count").Err()
+}
+
+// GetShortenedURLCount retrieves the count of shortened URLs from Redis.
+func GetShortenedURLCount() (int64, error) {
+	return redisClient.Get(ctx, "shortened_url_count").Int64()
 }

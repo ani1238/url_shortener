@@ -97,7 +97,12 @@ func (us *URLShortener) shortenURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate a unique ID for the short URL.
-	id, _ = generateShortURLID()
+	id, err = generateShortURLID()
+	if err != nil {
+		// fmt.Println(err.Error())
+		http.Error(w, "Failed to store counter in Redis", http.StatusInternalServerError)
+		return
+	}
 
 	//store the long url to short url mapping
 	if err := redisdb.AddToRedis("long:"+input.URL, id, 24*time.Hour); err != nil {
@@ -168,14 +173,22 @@ func (us *URLShortener) getTopDomains(w http.ResponseWriter, r *http.Request) {
 }
 
 // Generate a unique short URL ID.
-func generateShortURLID() (string, int64) {
+func generateShortURLID() (string, error) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	counter++
+	counter, err := redisdb.GetShortenedURLCount()
+	if err != nil {
+		return "", err
+	}
 
 	id := convertToBase64(counter)
-	return id, counter
+
+	// Increment the shortened URL count in Redis
+	if err := redisdb.IncrementShortenedURLCount(); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 func convertToBase64(num int64) string {
